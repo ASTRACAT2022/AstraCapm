@@ -8,8 +8,6 @@ from aiogram import Router
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiohttp import web
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -36,14 +34,8 @@ DB_PATH = os.getenv("DB_PATH", "/tmp/textstyler.db")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 GIGACHAT_AUTH_KEY = os.getenv("GIGACHAT_AUTH_KEY")
 GIGACHAT_CLIENT_ID = os.getenv("GIGACHAT_CLIENT_ID")
-WEBHOOK_PATH = "/webhook"
-BASE_WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 if not API_TOKEN:
     raise ValueError("BOT_TOKEN not found in .env file")
-if not BASE_WEBHOOK_URL:
-    raise ValueError("WEBHOOK_URL not found in .env file")
-if not GIGACHAT_AUTH_KEY:
-    logger.warning("GIGACHAT_AUTH_KEY not found in .env, GigaChat features will use fallback")
 bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 router = Router()
@@ -243,6 +235,7 @@ def call_gigachat_api(text, command, tone=None):
     
     payload = {
         "model": "GigaChat",
+        Copy code
         "messages": [
             {"role": "user", "content": prompts[command]}
         ],
@@ -694,22 +687,6 @@ async def gigachat_command(message: types.Message):
     ])
     await message.answer(styled_text, reply_markup=keyboard)
 
-# Настройка webhook
-async def on_startup():
-    webhook_url = f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}"
-    await bot.set_webhook(url=webhook_url)
-    logger.info(f"Webhook установлен на {webhook_url}")
-
-async def on_shutdown():
-    await bot.delete_webhook()
-    logger.info("Webhook удалён")
-
-# Создание aiohttp приложения
-app = web.Application()
-request_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
-request_handler.register(app, path=WEBHOOK_PATH)
-setup_application(app, dp, bot=bot)
-
-# Запуск приложения
+# Запуск бота с опросом
 if __name__ == "__main__":
-    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    asyncio.run(dp.start_polling(bot))
