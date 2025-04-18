@@ -17,6 +17,9 @@ import random
 import zalgo_text.zalgo as zalgo
 import pyfiglet
 import re
+import requests
+import uuid
+import json
 
 # Загрузка переменных из .env
 load_dotenv()
@@ -29,8 +32,12 @@ logger = logging.getLogger(__name__)
 API_TOKEN = os.getenv("BOT_TOKEN")
 DB_PATH = os.getenv("DB_PATH", "textstyler.db")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
+GIGACHAT_AUTH_KEY = os.getenv("GIGACHAT_AUTH_KEY")
+GIGACHAT_CLIENT_ID = os.getenv("GIGACHAT_CLIENT_ID")
 if not API_TOKEN:
     raise ValueError("BOT_TOKEN not found in .env file")
+if not GIGACHAT_AUTH_KEY:
+    logger.warning("GIGACHAT_AUTH_KEY not found in .env, GigaChat features will use fallback")
 bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 router = Router()
@@ -84,7 +91,8 @@ LANGUAGES = {
         "broadcast_sent": "Broadcast sent to {} users.",
         "style_restricted": "Style '{}' is restricted for you.",
         "auto_formatted": "Text auto-formatted based on keyword '{}'.",
-        "help": "Use /style, /preset, /random, /history, or inline mode @{}"
+        "help": "Use /style, /preset, /random, /history, or inline mode @{}",
+        "gigachat_error": "GigaChat API error, using fallback: {}"
     },
     "ru": {
         "welcome": "Добро пожаловать в TextStyler Pro! Используйте /style для стилизации текста, /preset для шаблонов или попробуйте инлайн-режим с @{}",
@@ -98,7 +106,8 @@ LANGUAGES = {
         "broadcast_sent": "Рассылка отправлена {} пользователям.",
         "style_restricted": "Стиль '{}' ограничен для вас.",
         "auto_formatted": "Текст автоматически отформатирован по ключевому слову '{}'.",
-        "help": "Используйте /style, /preset, /random, /history или инлайн-режим @{}"
+        "help": "Используйте /style, /preset, /random, /history или инлайн-режим @{}",
+        "gigachat_error": "Ошибка API GigaChat, используется запасной вариант: {}"
     }
 }
 
@@ -164,6 +173,67 @@ def is_style_restricted(user_id, style):
     conn.close()
     return bool(result)
 
+# Функция для получения токена GigaChat
+def get_gigachat_token():
+    url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+    payload = {'scope': 'GIGACHAT_API_PERS'}
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'RqUID': str(uuid.uuid4()),  # Генерируем уникальный RqUID
+        'Authorization': f'Basic {GIGACHAT_AUTH_KEY}'
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, data=payload, verify=False)  # Отключаем проверку SSL для тестов
+        response.raise_for_status()
+        data = response.json()
+        return data.get('access_token'), data.get('expires_at')
+    except Exception as e:
+        logger.error(f"Failed to get GigaChat token: {e}")
+        return None, None
+
+# Функция для вызова GigaChat API
+def call_gigachat_api(text, command):
+    if not GIGACHAT_AUTH_KEY:
+        return None
+    
+    token, expires_at = get_gigachat_token()
+    if not token:
+        return None
+    
+    # Предполагаемый эндпоинт для генерации текста
+    url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {token}'
+    }
+    
+    # Настраиваем промпт в зависимости от команды
+    prompts = {
+        "gigachadify": f"Make this text sound extremely confident and powerful, like a GigaChad: {text}",
+        "make_post": f"Format this text as a stylish social media post: {text}",
+        "smartreply": f"Generate a witty and relevant reply to this message: {text}",
+        "rewrite": f"Rewrite this text in a more elegant and stylish way: {text}"
+    }
+    
+    payload = {
+        "model": "GigaChat",
+        "messages": [
+            {"role": "user", "content": prompts[command]}
+        ],
+        "max_tokens": 200
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, verify=False)
+        response.raise_for_status()
+        data = response.json()
+        return data['choices'][0]['message']['content']
+    except Exception as e:
+        logger.error(f"GigaChat API error: {e}")
+        return None
+
 # Обработчик /start
 @router.message(CommandStart())
 async def start_command(message: types.Message):
@@ -213,7 +283,7 @@ async def style_command(message: types.Message):
 @router.message(Command("preset"))
 async def preset_command(message: types.Message):
     lang = get_user_language(message.from_user.id)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    keyboard = InlineKeyboardMarkup(inline_keyword=[
         [InlineKeyboardButton(text="Header", callback_data="preset_header"),
          InlineKeyboardButton(text="Announcement", callback_data="preset_announcement")],
         [InlineKeyboardButton(text="Meme", callback_data="preset_meme"),
@@ -277,7 +347,6 @@ async def history_command(message: types.Message):
 @router.message(Command("clear"))
 async def clear_command(message: types.Message):
     text = message.text.replace("/clear", "").strip() or "Sample text"
-    # Удаляем HTML/Markdown теги
     clean_text = re.sub(r'<[^>]+>|`{1,3}|[\*_~]', '', text)
     await message.answer(clean_text)
 
@@ -347,12 +416,10 @@ async def graph_command(message: types.Message):
     df["created_at"] = pd.to_datetime(df["created_at"])
     df["date"] = df["created_at"].dt.date
     
-    # График активности
     activity = df.groupby("date").size().reset_index(name="count")
     fig1 = px.line(activity, x="date", y="count", title="Activity Over Time")
     fig1.write_to_file("activity_graph.html")
     
-    # Круговая диаграмма топ-стилей
     top_styles = df["style"].value_counts().reset_index(name="count")
     fig2 = px.pie(top_styles, values="count", names="style", title="Top Styles")
     fig2.write_to_file("top_styles.png")
@@ -383,7 +450,7 @@ async def broadcast_command(message: types.Message):
         try:
             await bot.send_message(user_id, text)
             sent_count += 1
-            await asyncio.sleep(0.05)  # Антиспам
+            await asyncio.sleep(0.05)
         except Exception as e:
             logger.error(f"Failed to send broadcast to {user_id}: {e}")
     
@@ -496,7 +563,7 @@ async def process_preset_text(message: types.Message, state: FSMContext):
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.executetoDB.execute("INSERT INTO stylizations (user_id, preset, text, created_at) VALUES (?, ?, ?, ?)",
+    c.execute("INSERT INTO stylizations (user_id, preset, text, created_at) VALUES (?, ?, ?, ?)",
               (message.from_user.id, preset, text, datetime.now().isoformat()))
     conn.commit()
     conn.close()
@@ -534,21 +601,28 @@ async def auto_format(message: types.Message):
                 conn.close()
             break
 
-# Заглушка для GigaChat
+# Обработчик GigaChat команд
 @router.message(Command("gigachadify", "make_post", "smartreply", "rewrite"))
 async def gigachat_command(message: types.Message):
     command = message.text.split()[0][1:]
     text = message.text.replace(f"/{command}", "").strip() or "Sample text"
+    lang = get_user_language(message.from_user.id)
     
-    # Заглушка: имитация работы GigaChat
-    responses = {
-        "gigachadify": f"💪 <b>ULTIMATE {text.upper()}! MAXIMUM POWER!</b> 💪",
-        "make_post": f"📜 <b>Epic Post:</b> {text} ✨ #TextStylerPro",
-        "smartreply": f"🔥 Nice one! Here's my take: {text} is awesome! 🔥",
-        "rewrite": f"🖋 Rewritten: {text.capitalize()} in a stylish way."
-    }
+    # Пробуем использовать GigaChat API
+    result = call_gigachat_api(text, command)
     
-    styled_text = responses[command]
+    # Fallback, если API не работает
+    if not result:
+        fallback_responses = {
+            "gigachadify": f"💪 <b>ULTIMATE {text.upper()}! MAXIMUM POWER!</b> 💪",
+            "make_post": f"📜 <b>Epic Post:</b> {text} ✨ #TextStylerPro",
+            "smartreply": f"🔥 Nice one! Here's my take: {text} is awesome! 🔥",
+            "rewrite": f"🖋 Rewritten: {text.capitalize()} in a stylish way."
+        }
+        result = fallback_responses[command]
+        await message.answer(LANGUAGES[lang]["gigachat_error"].format(result))
+    
+    styled_text = result
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Copy", callback_data=f"copy_{styled_text}")]
     ])
