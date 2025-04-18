@@ -10,8 +10,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
-import plotly.express as px
-import pandas as pd
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -34,12 +32,12 @@ logger = logging.getLogger(__name__)
 
 # Инициализация бота
 API_TOKEN = os.getenv("BOT_TOKEN")
-DB_PATH = os.getenv("DB_PATH", "textstyler.db")
+DB_PATH = os.getenv("DB_PATH", "/tmp/textstyler.db")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 GIGACHAT_AUTH_KEY = os.getenv("GIGACHAT_AUTH_KEY")
 GIGACHAT_CLIENT_ID = os.getenv("GIGACHAT_CLIENT_ID")
 WEBHOOK_PATH = "/webhook"
-BASE_WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Например, https://your-vercel-app.vercel.app
+BASE_WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 if not API_TOKEN:
     raise ValueError("BOT_TOKEN not found in .env file")
 if not BASE_WEBHOOK_URL:
@@ -95,8 +93,7 @@ LANGUAGES = {
         "welcome": "Welcome to TextStyler Pro! Use /style to style text, /preset for templates, or try inline mode with @{}",
         "style_menu": "Choose a style:",
         "preset_menu": "Choose a preset:",
-        "stats": "Total users: {}\nStylizations: {}\nTop style: {}",
-        "admin_menu": "Admin Panel:\n- /users: List users\n- /stats: Statistics\n- /graph: Activity graph\n- /broadcast: Send message to all\n- /set_group_template: Set group template",
+        "admin_menu": "Admin Panel:\n- /users: List users\n- /broadcast: Send message to all\n- /set_group_template: Set group template",
         "history": "Your stylizations:\n{}",
         "no_history": "No stylizations yet.",
         "enter_text": "Enter text to style in {}:",
@@ -114,8 +111,7 @@ LANGUAGES = {
         "welcome": "Добро пожаловать в TextStyler Pro! Используйте /style для стилизации текста, /preset для шаблонов или попробуйте инлайн-режим с @{}",
         "style_menu": "Выберите стиль:",
         "preset_menu": "Выберите шаблон:",
-        "stats": "Всего пользователей: {}\nСтилизаций: {}\nПопулярный стиль: {}",
-        "admin_menu": "Админ-панель:\n- /users: Список пользователей\n- /stats: Статистика\n- /graph: График активности\n- /broadcast: Рассылка всем\n- /set_group_template: Установить шаблон группы",
+        "admin_menu": "Админ-панель:\n- /users: Список пользователей\n- /broadcast: Рассылка всем\n- /set_group_template: Установить шаблон группы",
         "history": "Ваши стилизации:\n{}",
         "no_history": "Пока нет стилизаций.",
         "enter_text": "Введите текст для стилизации в {}:",
@@ -464,57 +460,6 @@ async def users_command(message: types.Message):
     for user_id, username, joined_at in users:
         response += f"ID: {user_id}, @{username}, Joined: {joined_at}\n"
     await message.answer(response or "No users found.")
-
-# Обработчик /stats
-@router.message(Command("stats"))
-async def stats_command(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("Access denied")
-        return
-    
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM users")
-    total_users = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM stylizations")
-    total_stylizations = c.fetchone()[0]
-    c.execute("SELECT style, COUNT(*) as count FROM stylizations GROUP BY style ORDER BY count DESC LIMIT 1")
-    top_style = c.fetchone()
-    top_style = top_style[0] if top_style else "None"
-    conn.close()
-    
-    lang = get_user_language(message.from_user.id)
-    await message.answer(LANGUAGES[lang]["stats"].format(total_users, total_stylizations, top_style))
-
-# Обработчик /graph
-@router.message(Command("graph"))
-async def graph_command(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("Access denied")
-        return
-    
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT created_at, style FROM stylizations")
-    data = c.fetchall()
-    conn.close()
-    
-    df = pd.DataFrame(data, columns=["created_at", "style"])
-    df["created_at"] = pd.to_datetime(df["created_at"])
-    df["date"] = df["created_at"].dt.date
-    
-    activity = df.groupby("date").size().reset_index(name="count")
-    fig1 = px.line(activity, x="date", y="count", title="Activity Over Time")
-    fig1.write_to_file("/tmp/activity_graph.html")
-    
-    top_styles = df["style"].value_counts().reset_index(name="count")
-    fig2 = px.pie(top_styles, values="count", names="style", title="Top Styles")
-    fig2.write_to_file("/tmp/top_styles.png")
-    
-    await message.answer_document(types.FSInputFile("/tmp/activity_graph.html"))
-    await message.answer_document(types.FSInputFile("/tmp/top_styles.png"))
-    os.remove("/tmp/activity_graph.html")
-    os.remove("/tmp/top_styles.png")
 
 # Обработчик /broadcast
 @router.message(Command("broadcast"))
