@@ -1,0 +1,25 @@
+```yaml
+services:
+  - type: web
+    name: textstyler-bot
+    plan: free
+    runtime: docker
+    repo: https://github.com/ASTRACAT2022/AstraCapm
+    branch: main
+    dockerCommand: "python main.py"
+    healthCheckPath: /
+    envVars:
+      - key: BOT_TOKEN
+        value: 7974351453:AAGnGIixDDw-As23YwAFPNp2QAAfacJLYXA
+      - key: DB_PATH
+        value: /tmp/textstyler.db
+      - key: ADMIN_ID
+        value: 650154766
+      - key: GIGACHAT_AUTH_KEY
+        value: ZWUwMjlmNTItYWM3YS00Nzc4LWJkODktYzA2NjQwY2M5ZGEwOjM4YmE2ODJmLWMxZDQtNDRkMC05MjViLTc2OGYxNmM1YzkwOQ==
+      - key: GIGACHAT_CLIENT_ID
+        value: ee029f52-ac7a-4778-bd89-c06640cc9da0
+      - key: WEBHOOK_URL
+        sync: false  # Будет запрошен при создании Blueprint
+      - key: PORT
+        value: 8000
