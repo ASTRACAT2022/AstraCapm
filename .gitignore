@@ -1,5 +1,4 @@
-node_modules
-pycache
-.pyc
 .env
-/tmp/
+/tmp/*
+__pycache__
+*.pyc
