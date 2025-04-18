@@ -3,7 +3,7 @@ services:
     name: textstyler-bot
     plan: free
     runtime: docker
-    repo: [invalid url, do not cite]
+    repo: https://github.com/ASTRACAT2022/AstraCapm
     branch: main
     dockerCommand: "python main.py"
     healthCheckPath: /
@@ -22,9 +22,4 @@ services:
         sync: false
       - key: PORT
         value: 8000
-    buildFilters:
-      includedPaths:
-        - main.py
-        - requirements.txt
-        - Dockerfile
     autoDeploy: false
