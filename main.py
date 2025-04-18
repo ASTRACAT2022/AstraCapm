@@ -8,6 +8,8 @@ from aiogram import Router
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 import plotly.express as px
 import pandas as pd
 from datetime import datetime
@@ -36,8 +38,12 @@ DB_PATH = os.getenv("DB_PATH", "textstyler.db")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 GIGACHAT_AUTH_KEY = os.getenv("GIGACHAT_AUTH_KEY")
 GIGACHAT_CLIENT_ID = os.getenv("GIGACHAT_CLIENT_ID")
+WEBHOOK_PATH = "/webhook"
+BASE_WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Например, https://your-vercel-app.vercel.app
 if not API_TOKEN:
     raise ValueError("BOT_TOKEN not found in .env file")
+if not BASE_WEBHOOK_URL:
+    raise ValueError("WEBHOOK_URL not found in .env file")
 if not GIGACHAT_AUTH_KEY:
     logger.warning("GIGACHAT_AUTH_KEY not found in .env, GigaChat features will use fallback")
 bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
@@ -198,7 +204,7 @@ def is_style_restricted(user_id, style):
     return bool(result)
 
 # Функция для экспорта текста в PDF
-def export_to_pdf(text, filename="output.pdf"):
+def export_to_pdf(text, filename="/tmp/output.pdf"):
     c = canvas.Canvas(filename, pagesize=A4)
     c.setFont("Helvetica", 12)
     y = 800
@@ -400,7 +406,7 @@ async def clear_command(message: types.Message):
 @router.message(Command("export_pdf"))
 async def export_pdf_command(message: types.Message):
     text = message.text.replace("/export_pdf", "").strip() or "Sample text"
-    filename = f"output_{message.from_user.id}.pdf"
+    filename = f"/tmp/output_{message.from_user.id}.pdf"
     export_to_pdf(text, filename)
     
     lang = get_user_language(message.from_user.id)
@@ -499,14 +505,16 @@ async def graph_command(message: types.Message):
     
     activity = df.groupby("date").size().reset_index(name="count")
     fig1 = px.line(activity, x="date", y="count", title="Activity Over Time")
-    fig1.write_to_file("activity_graph.html")
+    fig1.write_to_file("/tmp/activity_graph.html")
     
     top_styles = df["style"].value_counts().reset_index(name="count")
     fig2 = px.pie(top_styles, values="count", names="style", title="Top Styles")
-    fig2.write_to_file("top_styles.png")
+    fig2.write_to_file("/tmp/top_styles.png")
     
-    await message.answer_document(types.FSInputFile("activity_graph.html"))
-    await message.answer_document(types.FSInputFile("top_styles.png"))
+    await message.answer_document(types.FSInputFile("/tmp/activity_graph.html"))
+    await message.answer_document(types.FSInputFile("/tmp/top_styles.png"))
+    os.remove("/tmp/activity_graph.html")
+    os.remove("/tmp/top_styles.png")
 
 # Обработчик /broadcast
 @router.message(Command("broadcast"))
@@ -628,7 +636,7 @@ async def callback_query(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.edit_text(styled_text, reply_markup=None)
     elif data.startswith("export_pdf_"):
         styled_text = data.replace("export_pdf_", "")
-        filename = f"output_{callback.from_user.id}.pdf"
+        filename = f"/tmp/output_{callback.from_user.id}.pdf"
         export_to_pdf(styled_text, filename)
         await callback.message.answer_document(types.FSInputFile(filename), caption=LANGUAGES[lang]["pdf_exported"])
         os.remove(filename)
@@ -779,9 +787,22 @@ async def gigachat_command(message: types.Message):
     ])
     await message.answer(styled_text, reply_markup=keyboard)
 
-# Запуск бота
-async def main():
-    await dp.start_polling(bot)
+# Настройка webhook
+async def on_startup():
+    webhook_url = f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}"
+    await bot.set_webhook(url=webhook_url)
+    logger.info(f"Webhook set to {webhook_url}")
 
+async def on_shutdown():
+    await bot.delete_webhook()
+    logger.info("Webhook deleted")
+
+# Создание aiohttp приложения
+app = web.Application()
+request_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
+request_handler.register(app, path=WEBHOOK_PATH)
+setup_application(app, dp, bot=bot)
+
+# Запуск приложения
 if __name__ == "__main__":
-    asyncio.run(main())
+    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
