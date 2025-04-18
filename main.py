@@ -56,7 +56,7 @@ def init_db():
     c.execute("""CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
         username TEXT,
-        language TEXT DEFAULT 'en',
+        language TEXT DEFAULT 'ru',
         joined_at TEXT
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS stylizations (
@@ -87,26 +87,8 @@ def init_db():
 
 init_db()
 
-# Локализация
+# Локализация (только русский язык)
 LANGUAGES = {
-    "en": {
-        "welcome": "Welcome to TextStyler Pro! Use /style to style text, /preset for templates, or try inline mode with @{}",
-        "style_menu": "Choose a style:",
-        "preset_menu": "Choose a preset:",
-        "admin_menu": "Admin Panel:\n- /users: List users\n- /broadcast: Send message to all\n- /set_group_template: Set group template",
-        "history": "Your stylizations:\n{}",
-        "no_history": "No stylizations yet.",
-        "enter_text": "Enter text to style in {}:",
-        "broadcast_sent": "Broadcast sent to {} users.",
-        "style_restricted": "Style '{}' is restricted for you.",
-        "auto_formatted": "Text auto-formatted based on keyword '{}'.",
-        "help": "Use /style, /preset, /random, /history, /export_pdf, or inline mode @{}",
-        "gigachat_error": "GigaChat API error, using fallback: {}",
-        "pdf_exported": "Text exported to PDF!",
-        "set_group_template": "Choose a preset for this group:",
-        "group_template_set": "Preset '{}' set for this group.",
-        "choose_tone": "Choose tone for smart reply:"
-    },
     "ru": {
         "welcome": "Добро пожаловать в TextStyler Pro! Используйте /style для стилизации текста, /preset для шаблонов или попробуйте инлайн-режим с @{}",
         "style_menu": "Выберите стиль:",
@@ -140,7 +122,7 @@ STYLES = {
     "star": lambda text: f"★ {text} ★",
     "fire": lambda text: f"🔥 {text} 🔥",
     "circle": lambda text: f"◉ {text} ◉",
-    "important": lambda text: f"💥 IMPORTANT: {text} 💥",
+    "important": lambda text: f"💥 ВАЖНО: {text} 💥",
     "zalgo": lambda text: zalgo.zalgo().zalgofy(text),
     "mirror": lambda text: text[::-1],
     "ascii": lambda text: f"<pre>{pyfiglet.figlet_format(text, font='standard')}</pre>"
@@ -168,10 +150,10 @@ TRIGGERS = {
 
 # Тоны для /smartreply
 TONES = {
-    "sarcastic": "Respond in a sarcastic and witty tone",
-    "friendly": "Respond in a warm and friendly tone",
-    "formal": "Respond in a professional and formal tone",
-    "neutral": "Respond in a neutral and straightforward tone"
+    "sarcastic": "Отвечай в саркастичном и остроумном тоне",
+    "friendly": "Отвечай в тёплом и дружелюбном тоне",
+    "formal": "Отвечай в профессиональном и формальном тоне",
+    "neutral": "Отвечай в нейтральном и прямолинейном тоне"
 }
 
 # FSM для ожидания текста и тона
@@ -183,12 +165,7 @@ class StyleStates(StatesGroup):
 
 # Функция для получения языка пользователя
 def get_user_language(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT language FROM users WHERE user_id = ?", (user_id,))
-    result = c.fetchone()
-    conn.close()
-    return result[0] if result else "en"
+    return "ru"  # Всегда русский язык
 
 # Проверка ограничений стилей
 def is_style_restricted(user_id, style):
@@ -258,10 +235,10 @@ def call_gigachat_api(text, command, tone=None):
     }
     
     prompts = {
-        "gigachadify": f"Make this text sound extremely confident and powerful, like a GigaChad: {text}",
-        "make_post": f"Format this text as a stylish social media post: {text}",
-        "smartreply": f"{TONES.get(tone, 'Respond in a neutral tone')} to this message: {text}",
-        "rewrite": f"Rewrite this text in a more elegant and stylish way: {text}"
+        "gigachadify": f"Сделай этот текст максимально уверенным и мощным, как у ГигаЧада: {text}",
+        "make_post": f"Оформи этот текст как стильный пост для соцсетей: {text}",
+        "smartreply": f"{TONES.get(tone, 'Отвечай в нейтральном тоне')} на это сообщение: {text}",
+        "rewrite": f"Перепиши этот текст более элегантно и стильно: {text}"
     }
     
     payload = {
@@ -296,9 +273,8 @@ async def start_command(message: types.Message):
     lang = get_user_language(user_id)
     bot_username = (await bot.get_me()).username
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Add to Group", url=f"https://t.me/{bot_username}?startgroup=true")],
-        [InlineKeyboardButton(text="📘 Help", callback_data="help"),
-         InlineKeyboardButton(text="🌐 Language", callback_data="lang")]
+        [InlineKeyboardButton(text="➕ Добавить в группу", url=f"https://t.me/{bot_username}?startgroup=true")],
+        [InlineKeyboardButton(text="📘 Помощь", callback_data="help")]
     ])
     await message.answer(LANGUAGES[lang]["welcome"].format(bot_username), reply_markup=keyboard)
 
@@ -314,14 +290,14 @@ async def help_command(message: types.Message):
 async def style_command(message: types.Message):
     lang = get_user_language(message.from_user.id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Bold", callback_data="style_bold"),
-         InlineKeyboardButton(text="Italic", callback_data="style_italic")],
-        [InlineKeyboardButton(text="Mono", callback_data="style_mono"),
-         InlineKeyboardButton(text="Strike", callback_data="style_strike")],
-        [InlineKeyboardButton(text="Star", callback_data="style_star"),
-         InlineKeyboardButton(text="Fire", callback_data="style_fire")],
-        [InlineKeyboardButton(text="Zalgo", callback_data="style_zalgo"),
-         InlineKeyboardButton(text="Mirror", callback_data="style_mirror")],
+        [InlineKeyboardButton(text="Жирный", callback_data="style_bold"),
+         InlineKeyboardButton(text="Курсив", callback_data="style_italic")],
+        [InlineKeyboardButton(text="Моно", callback_data="style_mono"),
+         InlineKeyboardButton(text="Зачёркнутый", callback_data="style_strike")],
+        [InlineKeyboardButton(text="Звезда", callback_data="style_star"),
+         InlineKeyboardButton(text="Огонь", callback_data="style_fire")],
+        [InlineKeyboardButton(text="Залго", callback_data="style_zalgo"),
+         InlineKeyboardButton(text="Зеркало", callback_data="style_mirror")],
         [InlineKeyboardButton(text="ASCII", callback_data="style_ascii")]
     ])
     await message.answer(LANGUAGES[lang]["style_menu"], reply_markup=keyboard)
@@ -331,21 +307,21 @@ async def style_command(message: types.Message):
 async def preset_command(message: types.Message):
     lang = get_user_language(message.from_user.id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Header", callback_data="preset_header"),
-         InlineKeyboardButton(text="Announcement", callback_data="preset_announcement")],
-        [InlineKeyboardButton(text="Meme", callback_data="preset_meme"),
-         InlineKeyboardButton(text="Quote", callback_data="preset_quote")],
-        [InlineKeyboardButton(text="Alert", callback_data="preset_alert"),
-         InlineKeyboardButton(text="Holiday", callback_data="preset_holiday")],
-        [InlineKeyboardButton(text="Joke", callback_data="preset_joke"),
-         InlineKeyboardButton(text="Important", callback_data="preset_important")]
+        [InlineKeyboardButton(text="Заголовок", callback_data="preset_header"),
+         InlineKeyboardButton(text="Объявление", callback_data="preset_announcement")],
+        [InlineKeyboardButton(text="Мем", callback_data="preset_meme"),
+         InlineKeyboardButton(text="Цитата", callback_data="preset_quote")],
+        [InlineKeyboardButton(text="Тревога", callback_data="preset_alert"),
+         InlineKeyboardButton(text="Праздник", callback_data="preset_holiday")],
+        [InlineKeyboardButton(text="Шутка", callback_data="preset_joke"),
+         InlineKeyboardButton(text="Важное", callback_data="preset_important")]
     ])
     await message.answer(LANGUAGES[lang]["preset_menu"], reply_markup=keyboard)
 
 # Обработчик /random
 @router.message(Command("random"))
 async def random_command(message: types.Message):
-    text = message.text.replace("/random", "").strip() or "Sample text"
+    text = message.text.replace("/random", "").strip() or "Пример текста"
     style = random.choice(list(STYLES.keys()))
     
     if is_style_restricted(message.from_user.id, style):
@@ -363,9 +339,9 @@ async def random_command(message: types.Message):
     conn.close()
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Copy", callback_data=f"copy_{styled_text}"),
-         InlineKeyboardButton(text="✏️ Edit", callback_data=f"edit_{style}")],
-        [InlineKeyboardButton(text="📄 Export PDF", callback_data=f"export_pdf_{styled_text}")]
+        [InlineKeyboardButton(text="✅ Копировать", callback_data=f"copy_{styled_text}"),
+         InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_{style}")],
+        [InlineKeyboardButton(text="📄 Экспорт в PDF", callback_data=f"export_pdf_{styled_text}")]
     ])
     await message.answer(styled_text, reply_markup=keyboard)
 
@@ -386,7 +362,7 @@ async def history_command(message: types.Message):
     
     history_text = ""
     for i, (style, preset, text, created_at) in enumerate(stylizations, 1):
-        format_type = preset or style or "unknown"
+        format_type = preset or style or "неизвестно"
         history_text += f"{i}. {format_type}: {text} ({created_at})\n"
     
     await message.answer(LANGUAGES[lang]["history"].format(history_text))
@@ -394,14 +370,14 @@ async def history_command(message: types.Message):
 # Обработчик /clear
 @router.message(Command("clear"))
 async def clear_command(message: types.Message):
-    text = message.text.replace("/clear", "").strip() or "Sample text"
+    text = message.text.replace("/clear", "").strip() or "Пример текста"
     clean_text = re.sub(r'<[^>]+>|`{1,3}|[\*_~]', '', text)
     await message.answer(clean_text)
 
 # Обработчик /export_pdf
 @router.message(Command("export_pdf"))
 async def export_pdf_command(message: types.Message):
-    text = message.text.replace("/export_pdf", "").strip() or "Sample text"
+    text = message.text.replace("/export_pdf", "").strip() or "Пример текста"
     filename = f"/tmp/output_{message.from_user.id}.pdf"
     export_to_pdf(text, filename)
     
@@ -413,23 +389,23 @@ async def export_pdf_command(message: types.Message):
 @router.message(Command("set_group_template"))
 async def set_group_template_command(message: types.Message):
     if message.from_user.id != ADMIN_ID:
-        await message.answer("Access denied")
+        await message.answer("Доступ запрещён")
         return
     
     if not message.chat.type in ["group", "supergroup"]:
-        await message.answer("This command can only be used in groups.")
+        await message.answer("Эта команда доступна только в группах.")
         return
     
     lang = get_user_language(message.from_user.id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Header", callback_data="group_preset_header"),
-         InlineKeyboardButton(text="Announcement", callback_data="group_preset_announcement")],
-        [InlineKeyboardButton(text="Meme", callback_data="group_preset_meme"),
-         InlineKeyboardButton(text="Quote", callback_data="group_preset_quote")],
-        [InlineKeyboardButton(text="Alert", callback_data="group_preset_alert"),
-         InlineKeyboardButton(text="Holiday", callback_data="group_preset_holiday")],
-        [InlineKeyboardButton(text="Joke", callback_data="group_preset_joke"),
-         InlineKeyboardButton(text="Important", callback_data="group_preset_important")]
+        [InlineKeyboardButton(text="Заголовок", callback_data="group_preset_header"),
+         InlineKeyboardButton(text="Объявление", callback_data="group_preset_announcement")],
+        [InlineKeyboardButton(text="Мем", callback_data="group_preset_meme"),
+         InlineKeyboardButton(text="Цитата", callback_data="group_preset_quote")],
+        [InlineKeyboardButton(text="Тревога", callback_data="group_preset_alert"),
+         InlineKeyboardButton(text="Праздник", callback_data="group_preset_holiday")],
+        [InlineKeyboardButton(text="Шутка", callback_data="group_preset_joke"),
+         InlineKeyboardButton(text="Важное", callback_data="group_preset_important")]
     ])
     await message.answer(LANGUAGES[lang]["set_group_template"], reply_markup=keyboard)
 
@@ -437,7 +413,7 @@ async def set_group_template_command(message: types.Message):
 @router.message(Command("admin_panel"))
 async def admin_panel_command(message: types.Message):
     if message.from_user.id != ADMIN_ID:
-        await message.answer("Access denied")
+        await message.answer("Доступ запрещён")
         return
     
     lang = get_user_language(message.from_user.id)
@@ -447,7 +423,7 @@ async def admin_panel_command(message: types.Message):
 @router.message(Command("users"))
 async def users_command(message: types.Message):
     if message.from_user.id != ADMIN_ID:
-        await message.answer("Access denied")
+        await message.answer("Доступ запрещён")
         return
     
     conn = sqlite3.connect(DB_PATH)
@@ -456,21 +432,21 @@ async def users_command(message: types.Message):
     users = c.fetchall()
     conn.close()
     
-    response = "Recent users:\n"
+    response = "Недавние пользователи:\n"
     for user_id, username, joined_at in users:
-        response += f"ID: {user_id}, @{username}, Joined: {joined_at}\n"
-    await message.answer(response or "No users found.")
+        response += f"ID: {user_id}, @{username}, Присоединился: {joined_at}\n"
+    await message.answer(response or "Пользователи не найдены.")
 
 # Обработчик /broadcast
 @router.message(Command("broadcast"))
 async def broadcast_command(message: types.Message):
     if message.from_user.id != ADMIN_ID:
-        await message.answer("Access denied")
+        await message.answer("Доступ запрещён")
         return
     
     text = message.text.replace("/broadcast", "").strip()
     if not text:
-        await message.answer("Please provide a message to broadcast.")
+        await message.answer("Укажите сообщение для рассылки.")
         return
     
     conn = sqlite3.connect(DB_PATH)
@@ -486,7 +462,7 @@ async def broadcast_command(message: types.Message):
             sent_count += 1
             await asyncio.sleep(0.05)
         except Exception as e:
-            logger.error(f"Failed to send broadcast to {user_id}: {e}")
+            logger.error(f"Не удалось отправить рассылку пользователю {user_id}: {e}")
     
     lang = get_user_language(message.from_user.id)
     await message.answer(LANGUAGES[lang]["broadcast_sent"].format(sent_count))
@@ -496,34 +472,34 @@ async def broadcast_command(message: types.Message):
 async def smartreply_command(message: types.Message, state: FSMContext):
     lang = get_user_language(message.from_user.id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Sarcastic", callback_data="tone_sarcastic"),
-         InlineKeyboardButton(text="Friendly", callback_data="tone_friendly")],
-        [InlineKeyboardButton(text="Formal", callback_data="tone_formal"),
-         InlineKeyboardButton(text="Neutral", callback_data="tone_neutral")]
+        [InlineKeyboardButton(text="Саркастичный", callback_data="tone_sarcastic"),
+         InlineKeyboardButton(text="Дружелюбный", callback_data="tone_friendly")],
+        [InlineKeyboardButton(text="Формальный", callback_data="tone_formal"),
+         InlineKeyboardButton(text="Нейтральный", callback_data="tone_neutral")]
     ])
     await message.answer(LANGUAGES[lang]["choose_tone"], reply_markup=keyboard)
     await state.set_state(StyleStates.waiting_for_smartreply_tone)
-    await state.update_data(text=message.text.replace("/smartreply", "").strip() or "Sample text")
+    await state.update_data(text=message.text.replace("/smartreply", "").strip() or "Пример текста")
 
 # Инлайн-режим
 @router.inline_query()
 async def inline_query(inline_query: types.InlineQuery):
-    text = inline_query.query or "Sample text"
+    text = inline_query.query or "Пример текста"
     results = [
         types.InlineQueryResultArticle(
-            id="bold", title="Bold", description=f"Bold: {text}",
+            id="bold", title="Жирный", description=f"Жирный: {text}",
             input_message_content=types.InputTextMessageContent(message_text=STYLES["bold"](text))
         ),
         types.InlineQueryResultArticle(
-            id="italic", title="Italic", description=f"Italic: {text}",
+            id="italic", title="Курсив", description=f"Курсив: {text}",
             input_message_content=types.InputTextMessageContent(message_text=STYLES["italic"](text))
         ),
         types.InlineQueryResultArticle(
-            id="fire", title="Fire", description=f"Fire: {text}",
+            id="fire", title="Огонь", description=f"Огонь: {text}",
             input_message_content=types.InputTextMessageContent(message_text=STYLES["fire"](text))
         ),
         types.InlineQueryResultArticle(
-            id="zalgo", title="Zalgo", description=f"Zalgo: {text}",
+            id="zalgo", title="Залго", description=f"Залго: {text}",
             input_message_content=types.InputTextMessageContent(message_text=STYLES["zalgo"](text))
         )
     ]
@@ -552,7 +528,7 @@ async def callback_query(callback: types.CallbackQuery, state: FSMContext):
     elif data.startswith("group_preset_"):
         preset = data.replace("group_preset_", "")
         if callback.message.chat.type not in ["group", "supergroup"]:
-            await callback.message.edit_text("This command can only be used in groups.")
+            await callback.message.edit_text("Эта команда доступна только в группах.")
             await callback.answer()
             return
         conn = sqlite3.connect(DB_PATH)
@@ -562,20 +538,9 @@ async def callback_query(callback: types.CallbackQuery, state: FSMContext):
         conn.commit()
         conn.close()
         await callback.message.edit_text(LANGUAGES[lang]["group_template_set"].format(preset))
-    elif data == "lang":
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="set_lang_ru"),
-             InlineKeyboardButton(text="🇬🇧 English", callback_data="set_lang_en")]
-        ])
-        await callback.message.edit_text("Choose language:", reply_markup=keyboard)
-    elif data.startswith("set_lang_"):
-        lang = data.replace("set_lang_", "")
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang, callback.from_user.id))
-        conn.commit()
-        conn.close()
-        await callback.message.edit_text(f"Language set to {lang}")
+    elif data == "help":
+        bot_username = (await bot.get_me()).username
+        await callback.message.edit_text(LANGUAGES[lang]["help"].format(bot_username))
     elif data.startswith("copy_"):
         styled_text = data.replace("copy_", "")
         await callback.message.edit_text(styled_text, reply_markup=None)
@@ -585,29 +550,26 @@ async def callback_query(callback: types.CallbackQuery, state: FSMContext):
         export_to_pdf(styled_text, filename)
         await callback.message.answer_document(types.FSInputFile(filename), caption=LANGUAGES[lang]["pdf_exported"])
         os.remove(filename)
-    elif data == "help":
-        bot_username = (await bot.get_me()).username
-        await callback.message.edit_text(LANGUAGES[lang]["help"].format(bot_username))
     elif data.startswith("tone_"):
         tone = data.replace("tone_", "")
         data = await state.get_data()
-        text = data.get("text", "Sample text")
+        text = data.get("text", "Пример текста")
         
         result = call_gigachat_api(text, "smartreply", tone)
         if not result:
             fallback_responses = {
-                "sarcastic": f"😏 Oh, {text}? Really? That's... impressive. 😏",
-                "friendly": f"😊 Hey, {text} sounds awesome! Keep it up! 😊",
-                "formal": f"Dear user, your message '{text}' has been noted. Thank you.",
-                "neutral": f"Thanks for sharing: {text}."
+                "sarcastic": f"😏 Ох, {text}? Серьёзно? Это... впечатляет. 😏",
+                "friendly": f"😊 Эй, {text} звучит круто! Продолжай в том же духе! 😊",
+                "formal": f"Уважаемый пользователь, ваше сообщение '{text}' принято. Спасибо.",
+                "neutral": f"Спасибо за сообщение: {text}."
             }
             result = fallback_responses[tone]
             await callback.message.answer(LANGUAGES[lang]["gigachat_error"].format(result))
         
         styled_text = result
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Copy", callback_data=f"copy_{styled_text}"),
-             InlineKeyboardButton(text="📄 Export PDF", callback_data=f"export_pdf_{styled_text}")]
+            [InlineKeyboardButton(text="✅ Копировать", callback_data=f"copy_{styled_text}"),
+             InlineKeyboardButton(text="📄 Экспорт в PDF", callback_data=f"export_pdf_{styled_text}")]
         ])
         await callback.message.edit_text(styled_text, reply_markup=keyboard)
         await state.clear()
@@ -637,9 +599,9 @@ async def process_style_text(message: types.Message, state: FSMContext):
     conn.close()
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Copy", callback_data=f"copy_{styled_text}"),
-         InlineKeyboardButton(text="✏️ Edit", callback_data=f"edit_{style}")],
-        [InlineKeyboardButton(text="📄 Export PDF", callback_data=f"export_pdf_{styled_text}")]
+        [InlineKeyboardButton(text="✅ Копировать", callback_data=f"copy_{styled_text}"),
+         InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_{style}")],
+        [InlineKeyboardButton(text="📄 Экспорт в PDF", callback_data=f"export_pdf_{styled_text}")]
     ])
     await message.answer(styled_text, reply_markup=keyboard)
     await state.clear()
@@ -661,9 +623,9 @@ async def process_preset_text(message: types.Message, state: FSMContext):
     conn.close()
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Copy", callback_data=f"copy_{styled_text}"),
-         InlineKeyboardButton(text="✏️ Edit", callback_data=f"edit_{preset}")],
-        [InlineKeyboardButton(text="📄 Export PDF", callback_data=f"export_pdf_{styled_text}")]
+        [InlineKeyboardButton(text="✅ Копировать", callback_data=f"copy_{styled_text}"),
+         InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_{preset}")],
+        [InlineKeyboardButton(text="📄 Экспорт в PDF", callback_data=f"export_pdf_{styled_text}")]
     ])
     await message.answer(styled_text, reply_markup=keyboard)
     await state.clear()
@@ -711,24 +673,24 @@ async def auto_format(message: types.Message):
 @router.message(Command("gigachadify", "make_post", "rewrite"))
 async def gigachat_command(message: types.Message):
     command = message.text.split()[0][1:]
-    text = message.text.replace(f"/{command}", "").strip() or "Sample text"
+    text = message.text.replace(f"/{command}", "").strip() or "Пример текста"
     lang = get_user_language(message.from_user.id)
     
     result = call_gigachat_api(text, command)
     
     if not result:
         fallback_responses = {
-            "gigachadify": f"💪 <b>ULTIMATE {text.upper()}! MAXIMUM POWER!</b> 💪",
-            "make_post": f"📜 <b>Epic Post:</b> {text} ✨ #TextStylerPro",
-            "rewrite": f"🖋 Rewritten: {text.capitalize()} in a stylish way."
+            "gigachadify": f"💪 <b>МАКСИМАЛЬНЫЙ {text.upper()}! ПОЛНАЯ МОЩЬ!</b> 💪",
+            "make_post": f"📜 <b>Эпичный пост:</b> {text} ✨ #TextStylerPro",
+            "rewrite": f"🖋 Переписано: {text.capitalize()} в стильном виде."
         }
         result = fallback_responses[command]
         await message.answer(LANGUAGES[lang]["gigachat_error"].format(result))
     
     styled_text = result
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Copy", callback_data=f"copy_{styled_text}"),
-         InlineKeyboardButton(text="📄 Export PDF", callback_data=f"export_pdf_{styled_text}")]
+        [InlineKeyboardButton(text="✅ Копировать", callback_data=f"copy_{styled_text}"),
+         InlineKeyboardButton(text="📄 Экспорт в PDF", callback_data=f"export_pdf_{styled_text}")]
     ])
     await message.answer(styled_text, reply_markup=keyboard)
 
@@ -736,11 +698,11 @@ async def gigachat_command(message: types.Message):
 async def on_startup():
     webhook_url = f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}"
     await bot.set_webhook(url=webhook_url)
-    logger.info(f"Webhook set to {webhook_url}")
+    logger.info(f"Webhook установлен на {webhook_url}")
 
 async def on_shutdown():
     await bot.delete_webhook()
-    logger.info("Webhook deleted")
+    logger.info("Webhook удалён")
 
 # Создание aiohttp приложения
 app = web.Application()
