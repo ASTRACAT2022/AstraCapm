@@ -24,7 +24,6 @@ import qrcode
 from gtts import gTTS
 from PIL import Image
 import matplotlib.pyplot as plt
-import wikipedia
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 # Настройка логирования
@@ -47,7 +46,6 @@ dp.include_router(router)
 
 # Инициализация API клиентов
 translator = Translator()
-wikipedia.set_lang("ru")
 
 # Инициализация базы данных
 def init_db():
@@ -99,6 +97,20 @@ def init_db():
         text TEXT,
         created_at TEXT
     )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS channel_settings (
+        chat_id INTEGER PRIMARY KEY,
+        captcha_enabled INTEGER DEFAULT 0,
+        captcha_mode TEXT DEFAULT 'button',
+        captcha_text TEXT DEFAULT 'Подтвердите, что вы не бот'
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS admin_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chat_id INTEGER,
+        admin_id INTEGER,
+        action TEXT,
+        target_user_id INTEGER,
+        created_at TEXT
+    )""")
     conn.commit()
     conn.close()
 
@@ -130,7 +142,17 @@ LANGUAGES = {
         "welcome_set": "👋 Приветственное сообщение установлено.",
         "captcha_prompt": "🔒 Пройдите капчу: {} = ?",
         "captcha_success": "✅ Капча пройдена! Используйте /guide для инструкции.",
-        "guide": "📖 **Инструкция по TextStyler Pro**\n\n1. **Стилизация текста**:\n- /style — выберите стиль (🌟 жирный, 🔥 огонь, и т.д.)\n- /preset — шаблоны (📢 объявление, 🎉 праздник)\n- /random — случайный стиль\n\n2. **Интерактивные функции**:\n- /poll — создайте опрос 📊\n- /quiz — викторина ❓\n- /translate — перевод 🌐\n- /qrcode — QR-коды 📷\n- /voice — текст в речь 🎙️\n\n3. **Интеграции**:\n- /quote — цитаты 💬\n- /wiki — Википедия 📚\n\n4. **Развлечения**:\n- /joke — шутки 😜\n- /riddle — загадки 🧠\n- /dice — кубик 🎲\n\n5. **Утилиты**:\n- /remind — напоминания ⏰\n- /guide — эта инструкция 📖\n\n6. **Админ-команды** (для ID {}):\n- /ban, /mute, /stats, и т.д.\n\n**Капча**: Новые пользователи проходят капчу (например, 2 + 3 = ?).\n\nДобавьте бота в группу: /startgroup\nПоддержка: @TextStylerSupport"
+        "captcha_failed": "❌ Неверный ответ. Попробуйте снова.",
+        "captcha_button": "🔒 Нажмите, чтобы подтвердить, что вы не бот",
+        "captcha_text_prompt": "🔒 Выберите текст: {}",
+        "captcha_math_prompt": "🔒 Решите: {}",
+        "captcha_enabled": "✅ Капча включена в чате {}",
+        "captcha_disabled": "❌ Капча отключена в чате {}",
+        "admin_stats": "📊 Статистика:\n- Пользователей: {}\n- Активность за 7 дней: {}\n\n👥 Пользователи:\n{}",
+        "rules_set": "✅ Правила установлены.",
+        "filter_set": "✅ Фильтр установлен: {}",
+        "log_channel_set": "✅ Лог-канал установлен: {}",
+        "guide": "📖 **Инструкция по TextStyler Pro**\n\n1. **Стилизация текста**:\n- /style — выберите стиль (🌟 жирный, 🔥 огонь, и т.д.)\n- /preset — шаблоны (📢 объявление, 🎉 праздник)\n- /random — случайный стиль\n\n2. **Интерактивные функции**:\n- /poll — создайте опрос 📊\n- /quiz — викторина ❓\n- /translate — перевод 🌐\n- /qrcode — QR-коды 📷\n- /voice — текст в речь 🎙️\n\n3. **Интеграции**:\n- /quote — цитаты 💬\n- /wiki — Википедия 📚\n\n4. **Развлечения**:\n- /joke — шутки 😜\n- /riddle — загадки 🧠\n- /dice — кубик 🎲\n\n5. **Утилиты**:\n- /remind — напоминания ⏰\n- /guide — эта инструкция 📖\n\n6. **Админ-команды** (для ID {}):\n- /ban, /mute, /stats, /admin_stats, /setrules, /filters, /setlog\n\n7. **Каналы и группы**:\n- /captcha — настройка капчи\n- /setrules — установка правил\n- /setwelcome — приветственное сообщение\n\n**Капча**: Новые пользователи проходят капчу (например, 2 + 3 = ?).\n\nДобавьте бота в группу или канал: /startgroup\nПоддержка: @TextStylerSupport"
     }
 }
 
@@ -199,6 +221,10 @@ class StyleStates(StatesGroup):
     waiting_for_feedback = State()
     waiting_for_welcome = State()
     waiting_for_captcha = State()
+    waiting_for_captcha_config = State()
+    waiting_for_rules = State()
+    waiting_for_filter = State()
+    waiting_for_log_channel = State()
 
 # Утилиты
 def get_user_language(user_id):
@@ -227,13 +253,22 @@ def set_captcha_passed(user_id):
     conn.commit()
     conn.close()
 
-def generate_captcha():
-    a, b = random.randint(1, 10), random.randint(1, 10)
-    correct = a + b
-    question = f"{a} + {b}"
-    answers = [correct, correct + random.randint(1, 5), correct - random.randint(1, 5)]
-    random.shuffle(answers)
-    return question, correct, answers
+def generate_captcha(mode="button"):
+    if mode == "button":
+        return None, None, ["Подтвердить"]
+    elif mode == "math":
+        a, b = random.randint(1, 10), random.randint(1, 10)
+        correct = a + b
+        question = f"{a} + {b}"
+        answers = [correct, correct + random.randint(1, 5), correct - random.randint(1, 5)]
+        random.shuffle(answers)
+        return question, correct, answers
+    elif mode == "text":
+        texts = ["Солнце", "Луна", "Звезда"]
+        correct = random.choice(texts)
+        answers = texts.copy()
+        random.shuffle(answers)
+        return correct, correct, answers
 
 def export_to_pdf(text, filename="/tmp/output.pdf"):
     from reportlab.lib.pagesizes import A4
@@ -257,6 +292,22 @@ def get_group_template(chat_id):
     result = c.fetchone()
     conn.close()
     return result[0] if result else None
+
+def get_channel_settings(chat_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT captcha_enabled, captcha_mode, captcha_text FROM channel_settings WHERE chat_id = ?", (chat_id,))
+    result = c.fetchone()
+    conn.close()
+    return {"enabled": result[0], "mode": result[1], "text": result[2]} if result else {"enabled": 0, "mode": "button", "text": "Подтвердите, что вы не бот"}
+
+def set_channel_settings(chat_id, enabled, mode, text):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO channel_settings (chat_id, captcha_enabled, captcha_mode, captcha_text) VALUES (?, ?, ?, ?)",
+              (chat_id, enabled, mode, text))
+    conn.commit()
+    conn.close()
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(requests.RequestException))
 def get_gigachat_token():
@@ -316,38 +367,58 @@ def call_gigachat_api(text, command, tone=None):
         return None
 
 # Обработчики капчи
-async def send_captcha(message: types.Message, state: FSMContext):
-    lang = get_user_language(message.from_user.id)
-    question, correct, answers = generate_captcha()
+async def send_captcha(message: types.Message, state: FSMContext, chat_id=None, user_id=None):
+    lang = get_user_language(user_id or message.from_user.id)
+    settings = get_channel_settings(chat_id or message.chat.id)
+    mode = settings["mode"]
+    question, correct, answers = generate_captcha(mode)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=str(ans), callback_data=f"captcha_{ans}_{correct}") for ans in answers]
+        [InlineKeyboardButton(text=str(ans), callback_data=f"captcha_{ans}_{correct}_{chat_id or message.chat.id}_{user_id or message.from_user.id}") for ans in answers]
     ])
     await state.set_state(StyleStates.waiting_for_captcha)
-    await state.update_data(correct_answer=correct)
-    await message.answer(LANGUAGES[lang]["captcha_prompt"].format(question), reply_markup=keyboard)
+    await state.update_data(correct_answer=correct, chat_id=chat_id or message.chat.id, user_id=user_id or message.from_user.id)
+    if mode == "button":
+        await bot.send_message(chat_id or message.chat.id, settings["text"], reply_markup=keyboard)
+    elif mode == "math":
+        await bot.send_message(chat_id or message.chat.id, LANGUAGES[lang]["captcha_math_prompt"].format(question), reply_markup=keyboard)
+    elif mode == "text":
+        await bot.send_message(chat_id or message.chat.id, LANGUAGES[lang]["captcha_text_prompt"].format(", ".join(answers)), reply_markup=keyboard)
 
 @router.callback_query(lambda c: c.data.startswith("captcha_"))
 async def process_captcha(callback: types.CallbackQuery, state: FSMContext):
     lang = get_user_language(callback.from_user.id)
-    user_id = callback.from_user.id
     data = callback.data.split("_")
-    user_answer = int(data[1])
-    correct_answer = int(data[2])
+    user_answer = data[1]
+    correct_answer = data[2]
+    chat_id = int(data[3])
+    user_id = int(data[4])
     if user_answer == correct_answer:
         set_captcha_passed(user_id)
+        await bot.restrict_chat_member(chat_id, user_id, permissions=types.ChatPermissions(can_send_messages=True), until_date=None)
         bot_username = (await bot.get_me()).username
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="➕ Добавить в группу", url=f"https://t.me/{bot_username}?startgroup=true")],
             [InlineKeyboardButton(text="📖 Инструкция", callback_data="guide")]
         ])
         await callback.message.edit_text(LANGUAGES[lang]["captcha_success"], reply_markup=keyboard)
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT message FROM welcome_messages WHERE chat_id = ?", (chat_id,))
+        welcome = c.fetchone()
+        conn.close()
+        if welcome:
+            await bot.send_message(chat_id, welcome[0].format(mention=f"@{callback.from_user.username or callback.from_user.first_name}"))
     else:
-        if callback.message.chat.type in ["group", "supergroup"]:
-            until_date = datetime.now() + timedelta(minutes=5)
-            await callback.message.chat.restrict(user_id, permissions=types.ChatPermissions(can_send_messages=False), until_date=until_date)
         await callback.message.edit_text(LANGUAGES[lang]["captcha_failed"])
-        await asyncio.sleep(5 * 60)
-        await send_captcha(callback.message, state)
+        await asyncio.sleep(300)  # 5 минут
+        settings = get_channel_settings(chat_id)
+        if settings["enabled"]:
+            try:
+                await bot.ban_chat_member(chat_id, user_id)
+                await bot.unban_chat_member(chat_id, user_id)
+            except:
+                pass
+            await callback.message.delete()
     await callback.answer()
     await state.clear()
 
@@ -568,6 +639,12 @@ async def ban_command(message: types.Message):
     user_id = message.reply_to_message.from_user.id
     await message.chat.ban(user_id)
     await message.answer(f"Пользователь {user_id} забанен.")
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT INTO admin_logs (chat_id, admin_id, action, target_user_id, created_at) VALUES (?, ?, ?, ?, ?)",
+              (message.chat.id, message.from_user.id, "ban", user_id, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
 
 @router.message(Command("mute"))
 async def mute_command(message: types.Message):
@@ -582,6 +659,12 @@ async def mute_command(message: types.Message):
     until_date = datetime.now() + timedelta(minutes=minutes)
     await message.chat.restrict(user_id, permissions=types.ChatPermissions(can_send_messages=False), until_date=until_date)
     await message.answer(f"Пользователь {user_id} заглушен на {minutes} минут.")
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT INTO admin_logs (chat_id, admin_id, action, target_user_id, created_at) VALUES (?, ?, ?, ?, ?)",
+              (message.chat.id, message.from_user.id, "mute", user_id, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
 
 @router.message(Command("pin"))
 async def pin_command(message: types.Message):
@@ -593,6 +676,12 @@ async def pin_command(message: types.Message):
         return
     await message.reply_to_message.pin()
     await message.answer("📌 Сообщение закреплено.")
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT INTO admin_logs (chat_id, admin_id, action, target_user_id, created_at) VALUES (?, ?, ?, ?, ?)",
+              (message.chat.id, message.from_user.id, "pin", None, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
 
 @router.message(Command("stats"))
 async def stats_command(message: types.Message):
@@ -608,6 +697,25 @@ async def stats_command(message: types.Message):
     conn.close()
     await message.answer(f"📊 Статистика:\n- Пользователей: {total_users}\n- Стилизаций: {total_styles}")
 
+@router.message(Command("admin_stats"))
+async def admin_stats_command(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("🚫 Доступ запрещён")
+        return
+    lang = get_user_language(message.from_user.id)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users")
+    total_users = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM stylizations WHERE created_at > ?",
+              ((datetime.now() - timedelta(days=7)).isoformat(),))
+    recent_activity = c.fetchone()[0]
+    c.execute("SELECT user_id, username, joined_at FROM users LIMIT 10")
+    users = c.fetchall()
+    user_info = "\n".join(f"ID: {u[0]}, @{u[1] or 'NoUsername'}, Регистрация: {u[2]}" for u in users)
+    conn.close()
+    await message.answer(LANGUAGES[lang]["admin_stats"].format(total_users, recent_activity, user_info))
+
 @router.message(Command("clearhistory"))
 async def clear_history_command(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -620,6 +728,12 @@ async def clear_history_command(message: types.Message):
     conn.commit()
     conn.close()
     await message.answer(f"🗑️ История стилизаций для пользователя {user_id} очищена.")
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT INTO admin_logs (chat_id, admin_id, action, target_user_id, created_at) VALUES (?, ?, ?, ?, ?)",
+              (message.chat.id, message.from_user.id, "clearhistory", user_id, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
 
 @router.message(Command("restrictstyle"))
 async def restrict_style_command(message: types.Message):
@@ -637,19 +751,65 @@ async def restrict_style_command(message: types.Message):
     conn.commit()
     conn.close()
     await message.answer(f"🚫 Стиль {style} ограничен для пользователя {user_id}.")
+    c.execute("INSERT INTO admin_logs (chat_id, admin_id, action, target_user_id, created_at) VALUES (?, ?, ?, ?, ?)",
+              (message.chat.id, message.from_user.id, "restrictstyle", int(user_id), datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
 
 @router.message(Command("setwelcome"))
 async def set_welcome_command(message: types.Message, state: FSMContext):
     if message.from_user.id != ADMIN_ID:
         await message.answer("🚫 Доступ запрещён")
         return
-    if message.chat.type not in ["group", "supergroup"]:
-        await message.answer("Эта команда работает только в группах.")
-        return
     lang = get_user_language(message.from_user.id)
     await state.set_state(StyleStates.waiting_for_welcome)
     await state.update_data(chat_id=message.chat.id)
     await message.answer("👋 Введите приветственное сообщение для новых участников.")
+
+@router.message(Command("setrules"))
+async def set_rules_command(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("🚫 Доступ запрещён")
+        return
+    lang = get_user_language(message.from_user.id)
+    await state.set_state(StyleStates.waiting_for_rules)
+    await state.update_data(chat_id=message.chat.id)
+    await message.answer("📜 Введите правила чата.")
+
+@router.message(Command("filters"))
+async def filters_command(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("🚫 Доступ запрещён")
+        return
+    lang = get_user_language(message.from_user.id)
+    await state.set_state(StyleStates.waiting_for_filter)
+    await state.update_data(chat_id=message.chat.id)
+    await message.answer("🚫 Введите слово или фразу для фильтрации.")
+
+@router.message(Command("setlog"))
+async def set_log_command(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("🚫 Доступ запрещён")
+        return
+    lang = get_user_language(message.from_user.id)
+    await state.set_state(StyleStates.waiting_for_log_channel)
+    await state.update_data(admin_id=message.from_user.id)
+    await message.answer("📝 Укажите ID канала для логов (например, -1001234567890).")
+
+@router.message(Command("captcha"))
+async def captcha_command(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("🚫 Доступ запрещён")
+        return
+    lang = get_user_language(message.from_user.id)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔛 Включить", callback_data="captcha_enable"),
+         InlineKeyboardButton(text="🔴 Выключить", callback_data="captcha_disable")],
+        [InlineKeyboardButton(text="🛠️ Настроить", callback_data="captcha_configure")]
+    ])
+    await state.set_state(StyleStates.waiting_for_captcha_config)
+    await state.update_data(chat_id=message.chat.id)
+    await message.answer("🔒 Настройка капчи:", reply_markup=keyboard)
 
 @router.message(Command("exportdb"))
 async def export_db_command(message: types.Message):
@@ -935,6 +1095,32 @@ async def callback_query(callback: types.CallbackQuery, state: FSMContext):
     elif data.startswith("riddle_answer_"):
         answer = data.replace("riddle_answer_", "")
         await callback.message.edit_text(f"🧠 Ответ: {answer}")
+    elif data == "captcha_enable":
+        data_state = await state.get_data()
+        chat_id = data_state.get("chat_id")
+        set_channel_settings(chat_id, 1, "button", "Подтвердите, что вы не бот")
+        await callback.message.edit_text(LANGUAGES[lang]["captcha_enabled"].format(chat_id))
+        await state.clear()
+    elif data == "captcha_disable":
+        data_state = await state.get_data()
+        chat_id = data_state.get("chat_id")
+        set_channel_settings(chat_id, 0, "button", "Подтвердите, что вы не бот")
+        await callback.message.edit_text(LANGUAGES[lang]["captcha_disabled"].format(chat_id))
+        await state.clear()
+    elif data == "captcha_configure":
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔘 Кнопка", callback_data="captcha_mode_button"),
+             InlineKeyboardButton(text="📝 Текст", callback_data="captcha_mode_text")],
+            [InlineKeyboardButton(text="➕ Математика", callback_data="captcha_mode_math")]
+        ])
+        await callback.message.edit_text("🔒 Выберите режим капчи:", reply_markup=keyboard)
+    elif data.startswith("captcha_mode_"):
+        mode = data.replace("captcha_mode_", "")
+        data_state = await state.get_data()
+        chat_id = data_state.get("chat_id")
+        set_channel_settings(chat_id, 1, mode, "Подтвердите, что вы не бот")
+        await callback.message.edit_text(LANGUAGES[lang]["captcha_enabled"].format(chat_id))
+        await state.clear()
     await callback.answer()
 
 # Обработчики состояний
@@ -1056,7 +1242,96 @@ async def process_welcome(message: types.Message, state: FSMContext):
     conn.commit()
     conn.close()
     await message.answer(LANGUAGES[lang]["welcome_set"])
+    c.execute("INSERT INTO admin_logs (chat_id, admin_id, action, target_user_id, created_at) VALUES (?, ?, ?, ?, ?)",
+              (chat_id, message.from_user.id, "setwelcome", None, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
     await state.clear()
+
+@router.message(StyleStates.waiting_for_rules)
+async def process_rules(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("🚫 Доступ запрещён")
+        return
+    lang = get_user_language(message.from_user.id)
+    data = await state.get_data()
+    chat_id = data.get("chat_id")
+    rules_text = message.text.strip()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO welcome_messages (chat_id, message) VALUES (?, ?)",
+              (chat_id, rules_text))
+    conn.commit()
+    conn.close()
+    await message.answer(LANGUAGES[lang]["rules_set"])
+    c.execute("INSERT INTO admin_logs (chat_id, admin_id, action, target_user_id, created_at) VALUES (?, ?, ?, ?, ?)",
+              (chat_id, message.from_user.id, "setrules", None, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    await state.clear()
+
+@router.message(StyleStates.waiting_for_filter)
+async def process_filter(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("🚫 Доступ запрещён")
+        return
+    lang = get_user_language(message.from_user.id)
+    data = await state.get_data()
+    chat_id = data.get("chat_id")
+    filter_text = message.text.strip().lower()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO triggers (keyword, style, preset) VALUES (?, ?, ?)",
+              (filter_text, None, None))
+    conn.commit()
+    conn.close()
+    await message.answer(LANGUAGES[lang]["filter_set"].format(filter_text))
+    c.execute("INSERT INTO admin_logs (chat_id, admin_id, action, target_user_id, created_at) VALUES (?, ?, ?, ?, ?)",
+              (chat_id, message.from_user.id, "setfilter", None, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    await state.clear()
+
+@router.message(StyleStates.waiting_for_log_channel)
+async def process_log_channel(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("🚫 Доступ запрещён")
+        return
+    lang = get_user_language(message.from_user.id)
+    try:
+        channel_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Укажите корректный ID канала (например, -1001234567890).")
+        return
+    try:
+        await bot.get_chat(channel_id)
+    except:
+        await message.answer("❌ Бот не добавлен в указанный канал или ID некорректен.")
+        return
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO channel_settings (chat_id, captcha_enabled, captcha_mode, captcha_text) VALUES (?, ?, ?, ?)",
+              (channel_id, 0, "button", "Подтвердите, что вы не бот"))
+    conn.commit()
+    conn.close()
+    await message.answer(LANGUAGES[lang]["log_channel_set"].format(channel_id))
+    c.execute("INSERT INTO admin_logs (chat_id, admin_id, action, target_user_id, created_at) VALUES (?, ?, ?, ?, ?)",
+              (message.chat.id, message.from_user.id, "setlog", None, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    await state.clear()
+
+# Обработка новых участников
+@router.message(lambda message: message.new_chat_members)
+async def handle_new_members(message: types.Message, state: FSMContext):
+    settings = get_channel_settings(message.chat.id)
+    if not settings["enabled"]:
+        return
+    for member in message.new_chat_members:
+        if member.id == (await bot.get_me()).id:
+            continue
+        await bot.restrict_chat_member(message.chat.id, member.id, permissions=types.ChatPermissions(can_send_messages=False), until_date=None)
+        await send_captcha(message, state, chat_id=message.chat.id, user_id=member.id)
 
 # Автоформатирование и шаблоны групп
 @router.message()
