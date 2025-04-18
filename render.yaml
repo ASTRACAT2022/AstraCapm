@@ -1,4 +1,3 @@
-```yaml
 services:
   - type: web
     name: textstyler-bot
@@ -20,6 +19,12 @@ services:
       - key: GIGACHAT_CLIENT_ID
         value: ee029f52-ac7a-4778-bd89-c06640cc9da0
       - key: WEBHOOK_URL
-        sync: false  # Будет запрошен при создании Blueprint
+        sync: false
       - key: PORT
         value: 8000
+    buildFilters:
+      paths:
+        - main.py
+        - requirements.txt
+        - Dockerfile
+    autoDeploy: false
