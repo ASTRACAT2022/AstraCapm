@@ -1,3 +1,4 @@
+```python
 import asyncio
 import logging
 import sqlite3
@@ -235,7 +236,6 @@ def call_gigachat_api(text, command, tone=None):
     
     payload = {
         "model": "GigaChat",
-        Copy code
         "messages": [
             {"role": "user", "content": prompts[command]}
         ],
