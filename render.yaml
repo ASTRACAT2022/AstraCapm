@@ -22,7 +22,7 @@ services:
         sync: false
       - key: PORT
         value: 8000
-    buildFilters:GigaBot
+    buildFilters
       paths:
         - main.py
         - requirements.txt
