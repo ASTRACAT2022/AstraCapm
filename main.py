@@ -485,7 +485,7 @@ async def quiz_command(message: types.Message):
     question = parts[0].strip()
     options = [opt.strip() for opt in parts[1:-1]] if len(parts) > 2 else ["Да", "Нет"]
     correct = parts[-1].strip() if len(parts) > 1 else options[0]
-    correct_option_id = options.index(correct) Robif correct in options else 0
+    correct_option_id = options.index(correct) if correct in options else 0
     await message.answer_poll(
         question=question,
         options=options,
