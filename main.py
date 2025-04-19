@@ -224,26 +224,26 @@ with open('templates/dashboard.html', 'w') as f:
 </body>
 </html>''')
 
-defdef run_flask():run_flask():
- app.run(host='0.0.0.0', port=5000)run(host='0.0.0.0', port=5000)
+def run_flask():
+    app.run(host='0.0.0.0', port=5000)
 
 # Запуск бота и веб-панели
-defdef main():main():
- приложение = Application.builder().token(BOT_TOKEN).build()builder().token(BOT_TOKEN).build()
+def main():
+    application = Application.builder().token(BOT_TOKEN).build()
 
- application.add_handler(CommandHandler('start', start))add_handler(CommandHandler('start', start))
- приложение.add_handler (CallbackQueryHandler (кнопка))add_handler(CallbackQueryHandler(button))
- приложение.add_handler(CommandHandler('set_welcome', set_welcome))add_handler(CommandHandler('set_welcome', set_welcome))
- application.add_handler(CommandHandler('toggle_spam_filter', toggle_spam_filter))add_handler(CommandHandler('toggle_spam_filter', toggle_spam_filter))
- application.add_handler(CommandHandler('предупредить', предупредить))add_handler(CommandHandler('warn', warn))
- application.add_handler(CommandHandler('ban', ban))add_handler(CommandHandler('ban', ban))
- application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member))add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member))
- application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mederate_message))add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, moderate_message))
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(CallbackQueryHandler(button))
+    application.add_handler(CommandHandler('set_welcome', set_welcome))
+    application.add_handler(CommandHandler('toggle_spam_filter', toggle_spam_filter))
+    application.add_handler(CommandHandler('warn', warn))
+    application.add_handler(CommandHandler('ban', ban))
+    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, moderate_message))
 
- #Запуск Фляга в отдельном потоке# Запуск Flask в отдельном потоке
- threading.Thread(target=run_flask, daemon=True).start()Thread(target=run_flask, daemon=True).start()
+    # Запуск Flask в отдельном потоке
+    threading.Thread(target=run_flask, daemon=True).start()
 
- application.run_polling()run_polling()
+    application.run_polling()
 
-ifесли __name__ == '__main__':'__main__':
- основнойmain()
+if __name__ == '__main__':
+    main()
