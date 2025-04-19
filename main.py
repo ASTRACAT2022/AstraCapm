@@ -1,5 +1,6 @@
 import sqlite3
 import logging
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 from transformers import pipeline
@@ -188,60 +189,61 @@ def update_settings():
     conn.close()
     return "Настройки обновлены!"
 
+# Создать папку templates, если она не существует
+os.makedirs('templates', exist_ok=True)
+
 # HTML Template for Web Panel
 with open('templates/dashboard.html', 'w') as f:
-    f.write('''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Панель управления ботом</title>
- <style>
- tello { шрифт-семейство: Arial, bez zasecec; margа: 20px; }
- tatablitsa { corder-collapse: kolaplaps; ширина: 100%; }
- th, td { granyza: 1px ttverdoe ttelo #dd; запольниет: 8px; выравнивание tethecsta: inlеvo; }
- th { phon-cvet: #f2f2f2; }
- </style>
- </head>
- <body>
- <h1>Parnely upravlеniya botom</h1>
- <h2>Statisticka</h2>
- <tablicа>
- <tr><th>Chat ID</th><th>User ID</th><th>Username</th><th>Messages</th><th>Timestamp</th></tr>
- {% dlya staticyci в staticstike %}
- <tr><td>{{ stat[0] }}</td><td>{{ stat[1] }}</td><td>{{ stat[2] }}</td><td>{{ stat[3] }}</td><td>{{ stat[4] }}</td></tr>
- {% konéc dlya %}
- </table>
- <h2>Natstroyki</h2>
- <phormа metod= "post" action="/update_settings">
- <label>Chat ID: <входной тип= "number" name= "chat_id" required></label><br>
- <label>Welcome Сovoberchеniе: <wwwhodnoy tip="text" name= "welcome_message" required></label><br>
- <label>Spam Fillytr: <wwhodnoy tip= "checkbox" name= "spam_filter"></label><br>
- <входной тип= "отправить" значение= "Сохранит">
- </form>
- </body>
- </html>
- '')
+    f.write('''<!DOCTYPE html>
+<html>
+<head>
+    <title>Панель управления ботом</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>Панель управления ботом</h1>
+    <h2>Статистика</h2>
+    <table>
+        <tr><th>Chat ID</th><th>User ID</th><th>Username</th><th>Messages</th><th>Timestamp</th></tr>
+        {% for stat in stats %}
+        <tr><td>{{ stat[0] }}</td><td>{{ stat[1] }}</td><td>{{ stat[2] }}</td><td>{{ stat[3] }}</td><td>{{ stat[4] }}</td></tr>
+        {% endfor %}
+    </table>
+    <h2>Настройки</h2>
+    <form method="post" action="/update_settings">
+        <label>Chat ID: <input type="number" name="chat_id" required></label><br>
+        <label>Welcome Message: <input type="text" name="welcome_message" required></label><br>
+        <label>Spam Filter: <input type="checkbox" name="spam_filter"></label><br>
+        <input type="submit" value="Сохранить">
+    </form>
+</body>
+</html>''')
 
-деф запустит_фляжка():
- prilogeniе.begaty(хост='0,0,0,0', port=5000)
+defdef run_flask():run_flask():
+ app.run(host='0.0.0.0', port=5000)run(host='0.0.0.0', port=5000)
 
-#Запуск бота и веб-панели
-деф основой():
- prilogeniе = Prilogeniе.stroitely().ghetohn(BOT_TOKEN).stroittli()
+# Запуск бота и веб-панели
+defdef main():main():
+ приложение = Application.builder().token(BOT_TOKEN).build()builder().token(BOT_TOKEN).build()
 
- prilogheniе.dobavitty_handler (КомандованиеХандлер ('nаchatj', nаchinnay))
- prilogeniе.dobavitty_handler (Obratnyy vyzovQueryHandler (knopka))
- prilogeniе.dobavitty_handler (КомандованиеХандлер ("установит_добро пожаловат", set_welcome))
- prilogeniе.dobavitty_handler(KomandovаniеHandler('toggle_spam_filter', toggle_spam_filter))
- prilogeniе.dobavitty_handler (КомандованиеХандлер ('pretudypreditty', preduropretity))
- prilogeniе.dobavitty_handler (КомандованиеHandler('zapretity', zapretitti))
- prilogheniе.dobavittie_handler (Obrabotchick sobeniniy (filltry.StatucObnovitj.NOVYE_CHAT_CHLENY, novyy_chlеn))
- prilogeniе.dobavittie_handler (Обрабочик soboniy (fillytry.TEKCT & ~filyltrov.KOMAMANDOWABANYE, umerennoe_sobeniе))
+ application.add_handler(CommandHandler('start', start))add_handler(CommandHandler('start', start))
+ приложение.add_handler (CallbackQueryHandler (кнопка))add_handler(CallbackQueryHandler(button))
+ приложение.add_handler(CommandHandler('set_welcome', set_welcome))add_handler(CommandHandler('set_welcome', set_welcome))
+ application.add_handler(CommandHandler('toggle_spam_filter', toggle_spam_filter))add_handler(CommandHandler('toggle_spam_filter', toggle_spam_filter))
+ application.add_handler(CommandHandler('предупредить', предупредить))add_handler(CommandHandler('warn', warn))
+ application.add_handler(CommandHandler('ban', ban))add_handler(CommandHandler('ban', ban))
+ application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member))add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member))
+ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mederate_message))add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, moderate_message))
 
- #Запуск Фляга в отдельном потоке
- rézybaba.Nitty(target=run_flask, daemon=Istinnyy).navachty()
+ #Запуск Фляга в отдельном потоке# Запуск Flask в отдельном потоке
+ threading.Thread(target=run_flask, daemon=True).start()Thread(target=run_flask, daemon=True).start()
 
- prilogeniе.zappousti_opros()
+ application.run_polling()run_polling()
 
-esli __name__ == '__glаwny__':
- основого()
+ifесли __name__ == '__main__':'__main__':
+ основнойmain()
