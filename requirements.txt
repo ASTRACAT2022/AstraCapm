@@ -1,4 +1,4 @@
-python-telegramma-bot==20.7
-трансфоры==4.36.2
-факел==2.1.0
-фляга==3.0.0
+python-telegram-bot==20.7
+transformers==4.36.2
+torch==2.1.0
+flask==3.0.0
