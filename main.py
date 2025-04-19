@@ -7,6 +7,10 @@ from flask import Flask, render_template, request
 import threading
 import datetime
 
+# Конфигурация
+BOT_TOKEN = "7935425343:AAECbjFJvLHkeTvwHAKDG8uvmy-KiWcPtns"
+ADMIN_TELEGRAM_ID = 650154766
+
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,6 +30,10 @@ def init_db():
     conn.close()
 
 init_db()
+
+# Проверка, является ли пользователь администратором
+def is_admin(user_id):
+    return user_id == ADMIN_TELEGRAM_ID
 
 # Telegram Bot
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -51,11 +59,21 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = "Статистика:\n" + "\n".join([f"@{row[1]}: {row[2]} сообщений" for row in stats])
         await query.message.reply_text(response or "Нет данных.")
     elif query.data == 'settings':
-        await query.message.reply_text("Выберите настройку: /set_welcome <текст> или /toggle_spam_filter")
+        if is_admin(query.from_user.id):
+            await query.message.reply_text("Выберите настройку: /set_welcome <текст> или /toggle_spam_filter")
+        else:
+            await query.message.reply_text("Только администратор может изменять настройки.")
     elif query.data == 'moderate':
-        await query.message.reply_text("Модерация: используйте /warn @username или /ban @username")
+        if is_admin(query.from_user.id):
+            await query.message.reply_text("Модерация: используйте /warn @username или /ban @username")
+        else:
+            await query.message.reply_text("Только администратор может модерировать.")
 
 async def set_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.message.from_user.id):
+        await update.message.reply_text("Только администратор может изменять настройки.")
+        return
+
     chat_id = update.message.chat_id
     welcome_message = " ".join(context.args) or "Добро пожаловать!"
     conn = sqlite3.connect('bot.db')
@@ -67,6 +85,10 @@ async def set_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Приветственное сообщение установлено: {welcome_message}")
 
 async def toggle_spam_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.message.from_user.id):
+        await update.message.reply_text("Только администратор может изменять настройки.")
+        return
+
     chat_id = update.message.chat_id
     conn = sqlite3.connect('bot.db')
     c = conn.cursor()
@@ -108,12 +130,19 @@ async def moderate_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     # Обновление статистики
+    c.execute('SELECT message_count FROM stats WHERE chat_id=? AND user_id=?', (chat_id, user.id))
+    current_count = c.fetchone()
+    new_count = (current_count[0] + 1) if current_count else 1
     c.execute('INSERT OR REPLACE INTO stats (chat_id, user_id, username, message_count, timestamp) VALUES (?, ?, ?, ?, ?)',
-              (chat_id, user.id, user.username, 1, datetime.datetime.now().isoformat()))
+              (chat_id, user.id, user.username, new_count, datetime.datetime.now().isoformat()))
     conn.commit()
     conn.close()
 
 async def warn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.message.from_user.id):
+        await update.message.reply_text("Только администратор может выдавать предупреждения.")
+        return
+
     if context.args:
         username = context.args[0].replace('@', '')
         await update.message.reply_text(f"@{username}, предупреждение! Повторите, и будете забанены.")
@@ -121,6 +150,10 @@ async def warn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Укажите пользователя: /warn @username")
 
 async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.message.from_user.id):
+        await update.message.reply_text("Только администратор может банить пользователей.")
+        return
+
     if context.args:
         username = context.args[0].replace('@', '')
         await update.message.reply_text(f"@{username} забанен.")
@@ -162,54 +195,53 @@ with open('templates/dashboard.html', 'w') as f:
     <html>
     <head>
         <title>Панель управления ботом</title>
-        <style>
- тело { шрифт-семейство: Arial, без засечек; маржа: 20px; }
- таблица { corder-collapse: коллапс; ширина: 100%; }
- th, td { граница: 1px твердое тело #ddd; заполнение: 8px; выравнивание текста: влево; }
- th { фон-цвет: #f2f2f2; }
+ <style>
+ tello { шрифт-семейство: Arial, bez zasecec; margа: 20px; }
+ tatablitsa { corder-collapse: kolaplaps; ширина: 100%; }
+ th, td { granyza: 1px ttverdoe ttelo #dd; запольниет: 8px; выравнивание tethecsta: inlеvo; }
+ th { phon-cvet: #f2f2f2; }
  </style>
  </head>
  <body>
  <h1>Parnely upravlеniya botom</h1>
  <h2>Statisticka</h2>
- <таблица>
+ <tablicа>
  <tr><th>Chat ID</th><th>User ID</th><th>Username</th><th>Messages</th><th>Timestamp</th></tr>
- {% для статистики в статистике %}
+ {% dlya staticyci в staticstike %}
  <tr><td>{{ stat[0] }}</td><td>{{ stat[1] }}</td><td>{{ stat[2] }}</td><td>{{ stat[3] }}</td><td>{{ stat[4] }}</td></tr>
- {% конец для %}
+ {% konéc dlya %}
  </table>
  <h2>Natstroyki</h2>
- <форма метод= "post" action="/update_settings">
- <label>Chat ID: <input type= "number" name= "chat_id" required></label><br>
- <label>Welcome Сообщение: <входной тип="text" name= "welcome_message" required></label><br>
- <label>Spam Фильтр: <входной тип= "checkbox" name= "spam_filter"></label><br>
- <input type= "submit" value= "Сохранит">
+ <phormа metod= "post" action="/update_settings">
+ <label>Chat ID: <входной тип= "number" name= "chat_id" required></label><br>
+ <label>Welcome Сovoberchеniе: <wwwhodnoy tip="text" name= "welcome_message" required></label><br>
+ <label>Spam Fillytr: <wwhodnoy tip= "checkbox" name= "spam_filter"></label><br>
+ <входной тип= "отправить" значение= "Сохранит">
  </form>
  </body>
  </html>
  '')
 
-деф запустить_flask():
- приложение.бегать(хост='0,0,0,0', порт=5000)
+деф запустит_фляжка():
+ prilogeniе.begaty(хост='0,0,0,0', port=5000)
 
 #Запуск бота и веб-панели
-деф основной():
-    #Замените 'YOUR_BOT_TOKEN' на токена, полюченного от @BotFather
- приложение = Приложение.строитель().жетон('ТВОЙ_БОТ_ТОКЕН').строить()
+деф основой():
+ prilogeniе = Prilogeniе.stroitely().ghetohn(BOT_TOKEN).stroittli()
 
- приложение.добавить_handler(КомандованиеHandler('начать', начинай))
- приложение.добавить_handler(Обратный вызовQueryHandler(кнопка))
- приложение.добавить_handler(КомандованиеHandler("установить_добро пожаловать", set_welcome))
- приложение.добавить_handler(КомандованиеHandler('toggle_spam_filter', toggle_spam_filter))
- приложение.добавить_handler(КомандованиеHandler('предупредить', предупредить))
- приложение.добавить_handler(КомандованиеHandler('запретить', запретить))
- приложение.добавить_handler(Обработчик сообщений(фильтры.СтатусОбновить.НОВЫЕ_ЧАТ_ЧЛЕНЫ, новый_член))
- приложение.добавить_handler(Обработчик сообщений(фильтры.ТЕКСТ & ~фильтров.КОМАНДОВАНИЕ, умеренное_сообщение))
+ prilogheniе.dobavitty_handler (КомандованиеХандлер ('nаchatj', nаchinnay))
+ prilogeniе.dobavitty_handler (Obratnyy vyzovQueryHandler (knopka))
+ prilogeniе.dobavitty_handler (КомандованиеХандлер ("установит_добро пожаловат", set_welcome))
+ prilogeniе.dobavitty_handler(KomandovаniеHandler('toggle_spam_filter', toggle_spam_filter))
+ prilogeniе.dobavitty_handler (КомандованиеХандлер ('pretudypreditty', preduropretity))
+ prilogeniе.dobavitty_handler (КомандованиеHandler('zapretity', zapretitti))
+ prilogheniе.dobavittie_handler (Obrabotchick sobeniniy (filltry.StatucObnovitj.NOVYE_CHAT_CHLENY, novyy_chlеn))
+ prilogeniе.dobavittie_handler (Обрабочик soboniy (fillytry.TEKCT & ~filyltrov.KOMAMANDOWABANYE, umerennoe_sobeniе))
 
-    #Запуск Фляга в отдельном потоке
- резьба.Нить(target=run_flask, daemon=Истинный).начать()
+ #Запуск Фляга в отдельном потоке
+ rézybaba.Nitty(target=run_flask, daemon=Istinnyy).navachty()
 
- приложение.запустить_опрос()
+ prilogeniе.zappousti_opros()
 
-если __name__ == '__главный__':
-    основной()
+esli __name__ == '__glаwny__':
+ основого()
