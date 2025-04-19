@@ -1,8 +1,4 @@
-aiogram==3.3.0
-python-dotenv==1.0.0
-zalgo-text==0.6
-pyfiglet==0.8.post1
-requests==2.31.0
-reportlab==4.0.4
-aiohttp==3.9.5
-setuptools==74.1.2
+python-telegramma-bot==20.7
+трансфоры==4.36.2
+факел==2.1.0
+фляга==3.0.0
